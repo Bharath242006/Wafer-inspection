@@ -6,7 +6,7 @@ __pycache__/
 .pytest_cache/
 .streamlit/
 
-# Datasets & Zip files (2.2GB data ignored for GitHub push limit)
+# Datasets & large files
 dataset/
 data/
 dataset.zip
