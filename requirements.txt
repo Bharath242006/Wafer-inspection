@@ -1,0 +1,19 @@
+# DriftSense-X — Python dependencies
+# Install with: python -m pip install -r requirements.txt
+
+# Core numerical / image processing
+numpy>=1.24
+opencv-python>=4.8
+Pillow>=10.0
+scipy>=1.11
+scikit-image>=0.21
+
+# Deep learning (for Siamese/Context/Lattice/Hybrid ranker models — optional at runtime)
+torch>=2.0
+torchvision>=0.15
+
+# Web application
+streamlit>=1.35
+
+# Utilities (standard library supplements)
+# No additional packages needed — csv, math, os, time, tempfile are stdlib

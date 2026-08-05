@@ -1,0 +1,33 @@
+# Python / PyTorch / Streamlit
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.streamlit/
+
+# Datasets & Zip files (2.2GB data ignored for GitHub push limit)
+dataset/
+data/
+dataset.zip
+*.zip
+*.tar.gz
+*.pt
+
+# Environment
+env/
+venv/
+.venv/
+
+# Scratch & Temp debug outputs
+scratch/
+*_debug*.png
+baseline_debug.png
+structural_debug.png
+demo_prediction*.png
+
+# IDE / System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

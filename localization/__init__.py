@@ -1,0 +1,3 @@
+"""
+Localization package initialization.
+"""

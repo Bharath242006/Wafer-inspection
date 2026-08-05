@@ -1,0 +1,4 @@
+stage,count,successful,failed,mean,median,p95,max,acc_1,acc_2,acc_5,acc_10,acc_25,acc_50,acc_100,rt_mean_ms,rt_med_ms,rt_p95_ms
+A. Baseline NCC,200,200,0,369.10,359.09,751.19,918.97,0.0%,0.0%,0.0%,0.0%,0.5%,2.0%,5.0%,61.9ms,52.8ms,108.5ms
+B. Global Coarse Only,200,200,0,502.49,486.37,853.05,1196.81,0.0%,0.0%,0.0%,0.0%,1.0%,1.5%,4.5%,58.9ms,55.6ms,82.4ms
+G. Complete Final Pipeline,200,200,0,442.06,443.10,846.64,1088.77,0.0%,0.0%,0.0%,0.0%,1.5%,2.0%,6.0%,3063.6ms,3686.6ms,4217.1ms
