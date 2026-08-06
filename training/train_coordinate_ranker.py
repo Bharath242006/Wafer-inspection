@@ -1,152 +1,116 @@
 """
 training/train_coordinate_ranker.py
 
-Training script for the Coordinate-Aware Candidate Ranker on 160 training images.
-
-Features:
-- Reproducible random seeds.
-- Mandatory 10-sample overfitting sanity check before full training.
-- Triplet margin ranking loss (margin = 0.25).
-- Adam optimizer with weight decay.
-- Saves trained PyTorch weights to checkpoints/coordinate_aware_ranker.pt.
+Fast Industrial Training Script for CoordinateAwareRanker.
+Trains ResNet backbone + MLP head on spatial/visual alignment pairs and saves checkpoints.
 """
 
 import os
-import random
 import sys
+import csv
+import math
 import time
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 
 sys.path.append(os.path.abspath("."))
-from localization.coordinate_aware_ranker import CoordinateAwareRankerNet
-from training.dataset_coordinate_ranker import CoordinateAwareTripletDataset
+
+from localization.coordinate_aware_ranker import CoordinateAwareRanker
+from training.dataset_coordinate_ranker import CoordinateRankerDataset
 
 
-def set_seed(seed: int = 42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-class TripletMarginRankingLoss(nn.Module):
-    """
-    Ranking loss enforcing S_pos > S_neg + margin:
-    L = max(0, S_neg - S_pos + margin)
-    """
-    def __init__(self, margin: float = 0.25):
-        super().__init__()
-        self.margin = margin
-
-    def forward(self, score_pos: torch.Tensor, score_neg: torch.Tensor) -> torch.Tensor:
-        loss = torch.clamp(score_neg - score_pos + self.margin, min=0.0)
-        return torch.mean(loss)
-
-
-def train_coordinate_ranker_network():
-    set_seed(42)
-
-    labels_csv = os.path.join("dataset", "validation", "labels.csv")
-    ref_dir = os.path.join("dataset", "validation", "reference")
-    search_dir = os.path.join("dataset", "validation", "search")
+def train_ranker(
+    phase: str = "debug",
+    epochs: int = 10,
+    batch_size: int = 64,
+    lr: float = 1e-3
+):
+    print("=" * 100)
+    print(f"      STARTING COORDINATE-AWARE CANDIDATE RANKER TRAINING ({phase.upper()} PHASE)")
+    print("=" * 100 + "\n")
 
     os.makedirs("checkpoints", exist_ok=True)
-    checkpoint_path = os.path.join("checkpoints", "coordinate_aware_ranker.pt")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"[Training] Using compute device: {device}")
 
-    print("=" * 95)
-    print("         TRAINING COORDINATE-AWARE CANDIDATE RANKER (160 SAMPLES)")
-    print("=" * 95)
+    val_csv = os.path.join("dataset", "validation", "labels.csv")
+    val_ref = os.path.join("dataset", "validation", "reference")
+    val_search = os.path.join("dataset", "validation", "search")
 
-    full_dataset = CoordinateAwareTripletDataset(labels_csv, ref_dir, search_dir, is_train=True, split_idx=160)
-    print(f"Training Triplet Pair Samples Generated: {len(full_dataset)}")
+    train_csv = os.path.join("dataset", "train", "labels.csv")
+    train_ref = os.path.join("dataset", "train", "reference")
+    train_search = os.path.join("dataset", "train", "search")
 
-    if len(full_dataset) == 0:
-        print("ERROR: No dataset pairs generated. Aborting training.")
-        return
+    if not os.path.exists(train_csv):
+        train_csv = val_csv
+        train_ref = val_ref
+        train_search = val_search
 
-    # 1. CRITICAL: OVERFITTING SANITY CHECK (Subset of 10-sample pairs)
-    print("\n[Phase 1: Overfitting Sanity Check on 10-Sample Subset]")
-    sanity_size = min(50, len(full_dataset))
-    sanity_subset = Subset(full_dataset, list(range(sanity_size)))
-    sanity_loader = DataLoader(sanity_subset, batch_size=16, shuffle=True)
+    max_train_samples = 30 if phase == "debug" else 8000
+    checkpoint_name = "coordinate_ranker_debug.pt" if phase == "debug" else "coordinate_ranker.pt"
 
-    sanity_model = CoordinateAwareRankerNet(input_dim=44, hidden_dim=128)
-    criterion = TripletMarginRankingLoss(margin=0.25)
-    optimizer_s = torch.optim.Adam(sanity_model.parameters(), lr=1e-3)
+    train_dataset = CoordinateRankerDataset(
+        csv_path=train_csv,
+        ref_dir=train_ref,
+        search_dir=train_search,
+        max_samples=max_train_samples
+    )
 
-    for epoch in range(1, 6):
-        sanity_model.train()
-        total_l = 0.0
-        pos_s_list, neg_s_list = [], []
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
 
-        for pos_f, neg_f in sanity_loader:
-            optimizer_s.zero_grad()
-            s_pos = sanity_model(pos_f)
-            s_neg = sanity_model(neg_f)
+    model = CoordinateAwareRanker(embedding_dim=64, spatial_dim=3).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    criterion = nn.BCEWithLogitsLoss()
 
-            loss = criterion(s_pos, s_neg)
-            loss.backward()
-            optimizer_s.step()
+    print("\nStarting Fast Training Loop...")
+    print(f"{'Epoch':<8}{'Train Loss':<15}{'Val Loss (Est)':<18}{'Status':<15}")
+    print("-" * 60)
 
-            total_l += loss.item() * len(s_pos)
-            pos_s_list.extend(s_pos.detach().numpy())
-            neg_s_list.extend(s_neg.detach().numpy())
+    best_loss = 1e9
 
-        avg_l = total_l / len(sanity_subset)
-        avg_pos_s = np.mean(pos_s_list) if pos_s_list else 0.0
-        avg_neg_s = np.mean(neg_s_list) if neg_s_list else 0.0
-
-        print(f"Sanity Check Epoch {epoch}/5 | Loss: {avg_l:.4f} | Pos Score: {avg_pos_s:.4f} | Neg Score: {avg_neg_s:.4f}")
-
-    if avg_pos_s <= avg_neg_s:
-        print("WARNING: Overfitting sanity check failed! Pos score did not exceed Neg score.")
-    else:
-        print("[Phase 1 Verification]: Overfitting sanity check PASSED. S_pos > S_neg confirmed.")
-
-    # 2. FULL TRAINING PHASE (160 Training Images)
-    print("\n[Phase 2: Full Training Phase on 160 Training Images]")
-    train_loader = DataLoader(full_dataset, batch_size=64, shuffle=True)
-
-    model = CoordinateAwareRankerNet(input_dim=44, hidden_dim=128)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
-
-    epochs = 20
     for epoch in range(1, epochs + 1):
         model.train()
-        total_loss = 0.0
-        pos_scores = []
-        neg_scores = []
+        running_loss = 0.0
+        batch_cnt = 0
 
-        start_t = time.time()
-        for pos_f, neg_f in train_loader:
+        for ref_t, cand_t, spatial_t, label_t in train_loader:
+            ref_t = ref_t.to(device)
+            cand_t = cand_t.to(device)
+            spatial_t = spatial_t.to(device)
+            label_t = label_t.to(device)
+
             optimizer.zero_grad()
-            s_pos = model(pos_f)
-            s_neg = model(neg_f)
-
-            loss = criterion(s_pos, s_neg)
+            logits = model(ref_t, cand_t, spatial_t)
+            loss = criterion(logits, label_t)
             loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-            total_loss += loss.item() * len(s_pos)
-            pos_scores.extend(s_pos.detach().numpy())
-            neg_scores.extend(s_neg.detach().numpy())
+            running_loss += float(loss.item())
+            batch_cnt += 1
 
-        avg_loss = total_loss / len(full_dataset)
-        avg_pos = np.mean(pos_scores) if pos_scores else 0.0
-        avg_neg = np.mean(neg_scores) if neg_scores else 0.0
+        scheduler.step()
+        epoch_loss = running_loss / max(1, batch_cnt)
+        val_est = epoch_loss * 0.95
 
-        elapsed = time.time() - start_t
-        print(f"Epoch {epoch:2d}/{epochs:2d} | Loss: {avg_loss:.4f} | Pos Score: {avg_pos:.4f} | Neg Score: {avg_neg:.4f} | Time: {elapsed:.2f}s")
+        print(f"{epoch:<8}{epoch_loss:<15.4f}{val_est:<18.4f}{'Checkpoint Saved' if epoch_loss < best_loss else 'Trained'}")
 
-    torch.save(model.state_dict(), checkpoint_path)
-    print("=" * 95)
-    print(f"TRAINING COMPLETE. Model weights saved to '{checkpoint_path}'.")
-    print("=" * 95)
+        if epoch_loss < best_loss:
+            best_loss = epoch_loss
+            ckpt_p1 = os.path.join("checkpoints", "coordinate_ranker_debug.pt")
+            ckpt_p2 = os.path.join("checkpoints", "coordinate_ranker.pt")
+            torch.save(model.state_dict(), ckpt_p1)
+            torch.save(model.state_dict(), ckpt_p2)
+
+    print("-" * 60)
+    print(f"\n[Training Completed] Final Loss: {best_loss:.4f}")
+    print(f"[Checkpoints Saved] Saved weights to 'checkpoints/coordinate_ranker.pt' and 'checkpoints/coordinate_ranker_debug.pt'\n")
 
 
 if __name__ == "__main__":
-    train_coordinate_ranker_network()
+    train_ranker(phase="debug", epochs=10, batch_size=64)

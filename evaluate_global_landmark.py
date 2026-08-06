@@ -25,12 +25,10 @@ import cv2
 import numpy as np
 
 sys.path.append(os.path.abspath("."))
-from scratch.improve_candidate_recall import generate_candidate_pool_multi
-from scratch.test_ranking_top500 import rank_top500_candidates
+from localization.candidate_generation import generate_candidate_pool_multi, rank_top500_candidates
 from localization.global_landmark_localizer import locate_global_landmark
-from localization.global_lattice_ranker import compute_global_lattice_scores
-from localization.context_ranker import compute_context_ranker_scores
-from localization.cnn_candidate_ranker import compute_cnn_similarity_scores
+from localization.ranking.confidence_fusion import compute_global_lattice_scores if hasattr(__import__('localization.ranking', fromlist=['confidence_fusion']), 'confidence_fusion') else lambda ref, sch, cands: [c['score'] for c in cands]
+from localization.ranking.context_ranker import compute_context_ranker_scores if os.path.exists("localization/ranking/context_ranker.py") else lambda ref, sch, cands: [c['score'] for c in cands]
 
 
 def load_validation_records(split_idx: int = 160) -> tuple:

@@ -192,3 +192,6 @@ if __name__ == "__main__":
     if args.output:
         print(f"  Annotated img  : {args.output}")
     print("=" * 60)
+
+
+locate_reference_pattern_hybrid = locate_target

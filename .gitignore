@@ -1,33 +1,47 @@
-# Python / PyTorch / Streamlit
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.streamlit/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Datasets & large files
-dataset/
-data/
+# Virtual Environment
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Dataset large zip files & outputs
 dataset.zip
 *.zip
 *.tar.gz
-*.pt
+outputs/logs/
+outputs/benchmark/
+outputs/predictions/
 
-# Environment
-env/
-venv/
-.venv/
-
-# Scratch & Temp debug outputs
-scratch/
-*_debug*.png
-baseline_debug.png
-structural_debug.png
-demo_prediction*.png
-
-# IDE / System
+# System & IDE
+.DS_Store
 .vscode/
 .idea/
-.DS_Store
-Thumbs.db
+*.swp
+*.swo
+
+# Scratch & Temporary
+scratch/
+tmp/

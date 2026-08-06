@@ -35,7 +35,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from scratch.improve_candidate_recall import compute_sobel_gradient, generate_candidate_pool_multi
+from localization.candidate_generation import generate_candidate_pool_multi
+from localization.features.edge_features import compute_sobel_gradient
 from localization.global_coarse_localizer import compute_local_variance_map, zmuv_ncc
 from localization.final_localizer import compute_canny_edge, estimate_lattice_period_2d
 from localization.global_landmark_localizer import compute_global_landmark_heatmap

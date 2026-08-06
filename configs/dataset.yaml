@@ -1,0 +1,45 @@
+# Dataset Configuration for DriftSense-X
+
+image_width: 1000
+image_height: 1000
+target_width: 100
+target_height: 100
+
+# Semiconductor Structure Parameters
+finfet:
+  fin_width: 8
+  fin_spacing: 24
+  fin_intensity: 160.0
+  gate_width: 18
+  gate_spacing: 90
+  gate_intensity: 210.0
+  background_intensity: 40.0
+
+dram:
+  word_line_spacing: 60
+  word_line_thickness: 16
+  word_line_intensity: 165.0
+  bit_line_spacing: 45
+  bit_line_intensity: 145.0
+  contact_diameter: 16
+  contact_intensity: 225.0
+  bg_intensity: 45.0
+
+# Noise and Degradation Parameters
+augmentation:
+  edge_brightening_strength: 0.6
+  ref_noise_std: 12.0
+  ref_blur_kernel: 3
+  ref_contrast_scale: 1.0
+  ref_brightness_shift: 0.0
+  search_noise_std: 25.0
+  search_blur_kernel: 3
+  search_contrast_scale: 0.95
+  search_brightness_shift: -5.0
+
+paths:
+  dataset_dir: "dataset"
+  train_dir: "dataset/train"
+  val_dir: "dataset/validation"
+  test_dir: "dataset/test"
+  output_dir: "outputs"

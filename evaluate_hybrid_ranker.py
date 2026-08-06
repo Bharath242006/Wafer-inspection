@@ -28,9 +28,9 @@ import numpy as np
 
 sys.path.append(os.path.abspath("."))
 
-from scratch.improve_candidate_recall import generate_candidate_pool_multi
+from localization.candidate_generation import generate_candidate_pool_multi
+from localization.features.edge_features import compute_sobel_gradient
 from localization.hybrid_ranker import compute_hybrid_scores
-from scratch.improve_candidate_recall import compute_sobel_gradient
 from localization.final_localizer import (
     compute_canny_edge, estimate_lattice_period_2d, refine_subpixel_peak
 )

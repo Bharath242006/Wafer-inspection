@@ -1,0 +1,21 @@
+# Model Architectures Configuration
+
+siamese_cnn:
+  in_channels: 1
+  feature_dim: 128
+  hidden_dim: 256
+
+hybrid_ranker:
+  input_dim: 7
+  hidden_dims: [64, 32]
+  dropout: 0.1
+
+coordinate_ranker:
+  input_dim: 9
+  hidden_dims: [64, 32]
+  dropout: 0.1
+
+context_ranker:
+  feature_dim: 128
+  num_heads: 4
+  num_layers: 2

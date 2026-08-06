@@ -1,0 +1,13 @@
+# Inference Configuration for DriftSense-X
+
+scale_factor: 0.10
+search_radius: 35
+nms_window_size: 5
+top_k_candidates: 50
+subpixel_refinement: true
+
+confidence_threshold: 0.5
+ambiguity_margin: 0.01
+
+output_dir: "outputs/predictions"
+visualizations_dir: "outputs/visualizations"

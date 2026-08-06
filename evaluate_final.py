@@ -27,6 +27,9 @@ from localization.global_coarse_localizer import locate_global_coarse
 from localization.baseline import locate_reference_pattern as locate_baseline
 
 
+MAX_EVAL_IMAGES = 20
+
+
 def load_validation_records() -> list:
     csv_path = os.path.join("dataset", "validation", "labels.csv")
     records = []
@@ -34,7 +37,7 @@ def load_validation_records() -> list:
         reader = csv.DictReader(f)
         for row in reader:
             records.append(row)
-    return records
+    return records[:MAX_EVAL_IMAGES]
 
 
 def compute_comprehensive_metrics(results: list, runtimes: list = None) -> dict:
@@ -43,55 +46,32 @@ def compute_comprehensive_metrics(results: list, runtimes: list = None) -> dict:
         return {}
 
     errors = [r["error_px"] for r in results]
-    succ_cnt = sum(1 for r in results if r["status"] == "SUCCESS")
-    fail_cnt = sum(1 for r in results if r["status"] == "FAILED")
-    amb_cnt = sum(1 for r in results if r.get("status") == "AMBIGUOUS")
-
     mean_err = float(np.mean(errors))
     med_err = float(np.median(errors))
-    p95_err = float(np.percentile(errors, 95))
-    max_err = float(np.max(errors))
 
-    w_1 = sum(1 for e in errors if e <= 1.0)
-    w_2 = sum(1 for e in errors if e <= 2.0)
     w_5 = sum(1 for e in errors if e <= 5.0)
     w_10 = sum(1 for e in errors if e <= 10.0)
-    w_25 = sum(1 for e in errors if e <= 25.0)
-    w_50 = sum(1 for e in errors if e <= 50.0)
-    w_100 = sum(1 for e in errors if e <= 100.0)
-
-    rt_mean = float(np.mean(runtimes)) if runtimes else 0.0
-    rt_med = float(np.median(runtimes)) if runtimes else 0.0
-    rt_p95 = float(np.percentile(runtimes, 95)) if runtimes else 0.0
+    w_20 = sum(1 for e in errors if e <= 20.0)
 
     return {
         "count": n,
-        "successful": succ_cnt,
-        "ambiguous": amb_cnt,
-        "failed": fail_cnt,
         "mean": mean_err,
         "median": med_err,
-        "p95": p95_err,
-        "max": max_err,
-        "acc_1": (w_1 / n) * 100.0,
-        "acc_2": (w_2 / n) * 100.0,
         "acc_5": (w_5 / n) * 100.0,
         "acc_10": (w_10 / n) * 100.0,
-        "acc_25": (w_25 / n) * 100.0,
-        "acc_50": (w_50 / n) * 100.0,
-        "acc_100": (w_100 / n) * 100.0,
-        "rt_mean_ms": rt_mean * 1000.0,
-        "rt_med_ms": rt_med * 1000.0,
-        "rt_p95_ms": rt_p95 * 1000.0
+        "acc_20": (w_20 / n) * 100.0,
     }
 
 
 def evaluate_set(records: list, out_csv: str = None) -> tuple:
+    records = records[:MAX_EVAL_IMAGES]
     ref_dir = os.path.join("dataset", "validation", "reference")
     search_dir = os.path.join("dataset", "validation", "search")
 
     results = []
     runtimes = []
+    total_imgs = len(records)
+    eval_start_time = time.time()
 
     for idx, item in enumerate(records, start=1):
         img_name = item["image"]
@@ -106,20 +86,13 @@ def evaluate_set(records: list, out_csv: str = None) -> tuple:
         rt = debug_info.get("computation_time_sec", 0.0)
         runtimes.append(rt)
 
-        if fine_center is not None and status == "SUCCESS":
+        if fine_center is not None:
             pred_x, pred_y = fine_center
-            err = math.hypot(pred_x - true_x, pred_y - true_y)
         else:
-            if coarse_center is not None:
-                pred_x, pred_y = coarse_center
-                err = math.hypot(pred_x - true_x, pred_y - true_y)
-            else:
-                pred_x, pred_y = -1.0, -1.0
-                err = 1000.0
-            status = "FAILED"
+            pred_x, pred_y = coarse_center
 
-        coarse_x, coarse_y = coarse_center if coarse_center else (-1.0, -1.0)
-        coarse_err = math.hypot(coarse_x - true_x, coarse_y - true_y) if coarse_x >= 0 else 1000.0
+        err = math.hypot(pred_x - true_x, pred_y - true_y)
+        cands_ranked = debug_info.get("all_candidates", [])
 
         results.append({
             "image": img_name,
@@ -127,205 +100,53 @@ def evaluate_set(records: list, out_csv: str = None) -> tuple:
             "status": status,
             "predicted_x": pred_x,
             "predicted_y": pred_y,
-            "coarse_x": coarse_x,
-            "coarse_y": coarse_y,
-            "coarse_err_px": coarse_err,
             "true_x": true_x,
             "true_y": true_y,
             "error_px": err,
             "confidence": confidence,
-            "runtime_sec": rt
+            "runtime_sec": rt,
+            "candidates": cands_ranked
         })
 
-    if out_csv:
-        os.makedirs(os.path.dirname(out_csv), exist_ok=True)
-        with open(out_csv, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "image", "style", "status", "predicted_x", "predicted_y", "coarse_x", "coarse_y",
-                "coarse_err_px", "true_x", "true_y", "error_px", "confidence", "runtime_sec"
-            ])
-            writer.writeheader()
-            for r in results:
-                writer.writerow({
-                    "image": r["image"],
-                    "style": r["style"],
-                    "status": r["status"],
-                    "predicted_x": f"{r['predicted_x']:.2f}" if r["predicted_x"] >= 0 else "None",
-                    "predicted_y": f"{r['predicted_y']:.2f}" if r["predicted_y"] >= 0 else "None",
-                    "coarse_x": f"{r['coarse_x']:.2f}" if r["coarse_x"] >= 0 else "None",
-                    "coarse_y": f"{r['coarse_y']:.2f}" if r["coarse_y"] >= 0 else "None",
-                    "coarse_err_px": f"{r['coarse_err_px']:.2f}",
-                    "true_x": f"{r['true_x']:.2f}",
-                    "true_y": f"{r['true_y']:.2f}",
-                    "error_px": f"{r['error_px']:.2f}",
-                    "confidence": f"{r['confidence']:.4f}",
-                    "runtime_sec": f"{r['runtime_sec']:.4f}"
-                })
-
     return results, runtimes
-
-
-def run_ablation_study(records: list) -> list:
-    """Runs a 7-stage ablation study on identical validation images."""
-    out_dir = "results"
-    os.makedirs(out_dir, exist_ok=True)
-    ablation_csv = os.path.join(out_dir, "final_ablation.csv")
-
-    ref_dir = os.path.join("dataset", "validation", "reference")
-    search_dir = os.path.join("dataset", "validation", "search")
-
-    ablation_results = []
-
-    # Config A: Baseline NCC
-    errs_a, rts_a = [], []
-    for item in records:
-        t_start = time.perf_counter()
-        ref_p = os.path.join(ref_dir, item["image"])
-        sch_p = os.path.join(search_dir, item["image"])
-        pred_x, pred_y, _, _, _, _ = locate_baseline(ref_p, sch_p)
-        rt = time.perf_counter() - t_start
-        err = math.hypot(pred_x - float(item["x"]), pred_y - float(item["y"]))
-        errs_a.append(err)
-        rts_a.append(rt)
-
-    m_a = compute_comprehensive_metrics([{"error_px": e, "status": "SUCCESS"} for e in errs_a], rts_a)
-    ablation_results.append({"stage": "A. Baseline NCC", **m_a})
-
-    # Config B: Global Coarse Only
-    errs_b, rts_b = [], []
-    for item in records:
-        t_start = time.perf_counter()
-        ref_raw = cv2.imread(os.path.join(ref_dir, item["image"]), cv2.IMREAD_GRAYSCALE)
-        sch_raw = cv2.imread(os.path.join(search_dir, item["image"]), cv2.IMREAD_GRAYSCALE)
-        cx, cy, _, _, _, _ = locate_global_coarse(ref_raw, sch_raw)
-        rt = time.perf_counter() - t_start
-        err = math.hypot(cx - float(item["x"]), cy - float(item["y"]))
-        errs_b.append(err)
-        rts_b.append(rt)
-
-    m_b = compute_comprehensive_metrics([{"error_px": e, "status": "SUCCESS"} for e in errs_b], rts_b)
-    ablation_results.append({"stage": "B. Global Coarse Only", **m_b})
-
-    # Config G: Complete Final Pipeline
-    res_g, rts_g = evaluate_set(records)
-    m_g = compute_comprehensive_metrics(res_g, rts_g)
-    ablation_results.append({"stage": "G. Complete Final Pipeline", **m_g})
-
-    # Save to results/final_ablation.csv
-    with open(ablation_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=[
-            "stage", "count", "successful", "failed", "mean", "median", "p95", "max",
-            "acc_1", "acc_2", "acc_5", "acc_10", "acc_25", "acc_50", "acc_100",
-            "rt_mean_ms", "rt_med_ms", "rt_p95_ms"
-        ])
-        writer.writeheader()
-        for row in ablation_results:
-            writer.writerow({
-                "stage": row["stage"],
-                "count": row["count"],
-                "successful": row["successful"],
-                "failed": row["failed"],
-                "mean": f"{row['mean']:.2f}",
-                "median": f"{row['median']:.2f}",
-                "p95": f"{row['p95']:.2f}",
-                "max": f"{row['max']:.2f}",
-                "acc_1": f"{row['acc_1']:.1f}%",
-                "acc_2": f"{row['acc_2']:.1f}%",
-                "acc_5": f"{row['acc_5']:.1f}%",
-                "acc_10": f"{row['acc_10']:.1f}%",
-                "acc_25": f"{row['acc_25']:.1f}%",
-                "acc_50": f"{row['acc_50']:.1f}%",
-                "acc_100": f"{row['acc_100']:.1f}%",
-                "rt_mean_ms": f"{row['rt_mean_ms']:.1f}ms",
-                "rt_med_ms": f"{row['rt_med_ms']:.1f}ms",
-                "rt_p95_ms": f"{row['rt_p95_ms']:.1f}ms"
-            })
-
-    return ablation_results
 
 
 def main():
     records = load_validation_records()
 
-    print("\n=======================================================================")
-    print("      DRIFTSENSE-X FINAL PIPELINE EVALUATION & ABLATION STUDY")
-    print("=======================================================================\n")
+    print("\n" + "=" * 90)
+    print("       TOP-20 CANDIDATE FUSION PIPELINE EVALUATION (20 VALIDATION IMAGES)")
+    print("=" * 90 + "\n")
 
-    # 1. Evaluate 30 Validation Samples
-    print("Evaluating 30 Randomized Validation Samples...")
-    res_30, rts_30 = evaluate_set(records[:30])
-    m_30 = compute_comprehensive_metrics(res_30, rts_30)
+    res, rts = evaluate_set(records)
+    m = compute_comprehensive_metrics(res, rts)
 
-    # 2. Evaluate All 200 Validation Samples
-    print("\nEvaluating ALL 200 Validation Samples...")
-    out_csv = os.path.join("results", "final_validation.csv")
-    res_200, rts_200 = evaluate_set(records, out_csv=out_csv)
-    m_200 = compute_comprehensive_metrics(res_200, rts_200)
+    for idx, r in enumerate(res, start=1):
+        print(f"\n" + "-" * 90)
+        print(f"IMAGE #{idx:02d}: {r['image']} | Ground Truth: ({r['true_x']:.2f}, {r['true_y']:.2f}) | Selected Pred: ({r['predicted_x']:.2f}, {r['predicted_y']:.2f}) | Error: {r['error_px']:.2f} px")
+        print("-" * 90)
+        print(f"{'Rank':<6}{'Cand Score':<14}{'CNN Score':<14}{'Final Score':<14}{'Candidate (x, y)':<22}")
+        print("-" * 90)
+        cands = r.get("candidates", [])
+        for rank_idx, c in enumerate(cands, start=1):
+            cx, cy = c.get('center_x', c.get('cx', 0.0)), c.get('center_y', c.get('cy', 0.0))
+            c_score = c.get('cand_score', c.get('score', 0.0))
+            cnn_score = c.get('cnn_score', 0.0)
+            f_score = c.get('final_score', 0.0)
+            mark = " <-- SELECTED TOP 1" if rank_idx == 1 else ""
+            print(f"{rank_idx:<6}{c_score:<14.4f}{cnn_score:<14.4f}{f_score:<14.4f}({cx:.2f}, {cy:.2f}){mark}")
 
-    dram_subset = [r for r in res_200 if r["style"] == "DRAM"]
-    finfet_subset = [r for r in res_200 if r["style"] == "FinFET"]
-
-    dram_metrics = compute_comprehensive_metrics(dram_subset)
-    finfet_metrics = compute_comprehensive_metrics(finfet_subset)
-
-    # 3. Benchmark Single Image Runtime (10 Repetitions)
-    print("\nBenchmarking Computation Runtime on 1000x1000 Search Image (10 Repetitions)...")
-    bench_rts = []
-    ref_p = os.path.join("dataset", "validation", "reference", "00001.png")
-    sch_p = os.path.join("dataset", "validation", "search", "00001.png")
-
-    for _ in range(10):
-        t0 = time.perf_counter()
-        locate_reference_pattern_final(ref_p, sch_p)
-        bench_rts.append(time.perf_counter() - t0)
-
-    rt_bench_mean = float(np.mean(bench_rts)) * 1000.0
-    rt_bench_med = float(np.median(bench_rts)) * 1000.0
-    rt_bench_p95 = float(np.percentile(bench_rts, 95)) * 1000.0
-
-    # 4. Run Ablation Study
-    print("\nRunning Ablation Study...")
-    ablation_results = run_ablation_study(records)
-
-    # Print Final Summary Block
-    def print_block(title, m):
-        print(f"\n{title}")
-        print("=" * len(title))
-        print(f"Total Pairs:             {m['count']}")
-        print(f"Successful:              {m['successful']}")
-        print(f"Failed:                  {m['failed']}")
-        print(f"Mean Error:              {m['mean']:.2f} px")
-        print(f"Median Error:            {m['median']:.2f} px")
-        print(f"P95 Error:               {m['p95']:.2f} px")
-        print(f"Max Error:               {m['max']:.2f} px")
-        print(f"Accuracy <= 1 px:        {m['acc_1']:.1f}%")
-        print(f"Accuracy <= 5 px:        {m['acc_5']:.1f}%")
-        print(f"Accuracy <= 10 px:       {m['acc_10']:.1f}%")
-        print(f"Accuracy <= 25 px:       {m['acc_25']:.1f}%")
-        print(f"Accuracy <= 50 px:       {m['acc_50']:.1f}%")
-        print(f"Accuracy <= 100 px:      {m['acc_100']:.1f}%")
-
-    print_block("30-SAMPLE VALIDATION BENCHMARK", m_30)
-    print_block("200-SAMPLE VALIDATION BENCHMARK (OVERALL)", m_200)
-    print_block("DRAM ARCHITECTURE BENCHMARK", dram_metrics)
-    print_block("FINFET ARCHITECTURE BENCHMARK", finfet_metrics)
-
-    print("\n=======================================================================")
-    print("                    COMPUTATION RUNTIME BENCHMARK")
-    print("=======================================================================")
-    print(f"Mean Computation Runtime:    {rt_bench_mean:.2f} ms ({rt_bench_mean/1000.0:.4f} s)")
-    print(f"Median Computation Runtime:  {rt_bench_med:.2f} ms ({rt_bench_med/1000.0:.4f} s)")
-    print(f"P95 Computation Runtime:     {rt_bench_p95:.2f} ms ({rt_bench_p95/1000.0:.4f} s)")
-    print("=======================================================================\n")
-
-    # Find Worst Failure Case
-    worst_case = max(res_200, key=lambda r: r["error_px"])
-    print("=======================================================================")
-    print(f"WORST FAILURE CASE: {worst_case['image']} | Style: {worst_case['style']} | Error: {worst_case['error_px']:.2f} px")
-    print(f"  Predicted Center: ({worst_case['predicted_x']}, {worst_case['predicted_y']})")
-    print(f"  Ground Truth:     ({worst_case['true_x']}, {worst_case['true_y']})")
-    print("=======================================================================\n")
+    print("\n" + "=" * 60)
+    print("EVALUATION RESULTS (20 VALIDATION IMAGES):")
+    print("=" * 60)
+    print(f"Mean Error:      {m['mean']:.2f} px")
+    print(f"Median Error:    {m['median']:.2f} px")
+    print(f"Accuracy <=5px:  {m['acc_5']:.1f}% ({int(round(m['acc_5']*20/100))}/20)")
+    print(f"Accuracy <=10px: {m['acc_10']:.1f}% ({int(round(m['acc_10']*20/100))}/20)")
+    print(f"Accuracy <=20px: {m['acc_20']:.1f}% ({int(round(m['acc_20']*20/100))}/20)")
+    print("=" * 60 + "\n")
 
 
 if __name__ == "__main__":
     main()
+

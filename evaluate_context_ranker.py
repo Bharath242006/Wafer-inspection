@@ -23,8 +23,7 @@ import cv2
 import numpy as np
 
 sys.path.append(os.path.abspath("."))
-from scratch.improve_candidate_recall import generate_candidate_pool_multi
-from scratch.test_ranking_top500 import rank_top500_candidates
+from localization.candidate_generation import generate_candidate_pool_multi, rank_top500_candidates
 from localization.context_ranker import compute_context_ranker_scores
 from localization.cnn_candidate_ranker import compute_cnn_similarity_scores
 

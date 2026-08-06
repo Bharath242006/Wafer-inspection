@@ -1,56 +1,58 @@
 """
 training/dataset_coordinate_ranker.py
 
-Fast PyTorch Dataset loader for Coordinate-Aware Candidate Ranker.
+PyTorch Dataset Loader for training CoordinateAwareRanker.
+Generates realistic pairs of positive (near GT) and negative (distractor) candidate patches
+with spatial position and scale metadata.
 """
 
+import os
 import csv
 import math
-import os
 import cv2
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from scratch.improve_candidate_recall import generate_candidate_pool_multi
-from localization.final_localizer import estimate_lattice_period_2d
-from localization.coordinate_aware_ranker import extract_coordinate_aware_features_pool
+from localization.candidate_generation import generate_candidate_pool_multi
 
 
-class CoordinateAwareTripletDataset(Dataset):
+class CoordinateRankerDataset(Dataset):
     """
-    Triplet Dataset generating positive and hard-negative candidate feature pairs.
+    Dataset loader for training CoordinateAwareRanker on wafer alignment pairs.
     """
-    def __init__(self, csv_file: str, ref_dir: str, search_dir: str, is_train: bool = True, split_idx: int = 160):
+    def __init__(
+        self,
+        csv_path: str,
+        ref_dir: str,
+        search_dir: str,
+        max_samples: int = None,
+        pos_dist_thresh: float = 15.0,
+        neg_dist_thresh: float = 30.0
+    ):
         super().__init__()
-        self.csv_file = csv_file
         self.ref_dir = ref_dir
         self.search_dir = search_dir
+        self.samples = []
 
-        self.records = []
-        with open(csv_file, "r", encoding="utf-8") as f:
+        records = []
+        with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                self.records.append(row)
+                records.append(row)
 
-        if is_train:
-            self.records = self.records[:split_idx]
-        else:
-            self.records = self.records[split_idx:]
+        if max_samples is not None:
+            records = records[:max_samples]
 
-        self.pairs = []
-        self._build_triplets()
+        print(f"[Dataset] Processing {len(records)} records for CoordinateRankerDataset...")
 
-    def _build_triplets(self):
-        print(f"[CoordinateAwareTripletDataset] Fast-generating candidate feature pairs for {len(self.records)} images...")
-
-        for idx, item in enumerate(self.records, start=1):
+        for idx, item in enumerate(records):
             img_name = item["image"]
             gt_x = float(item["x"])
             gt_y = float(item["y"])
 
-            ref_path = os.path.join(self.ref_dir, img_name)
-            search_path = os.path.join(self.search_dir, img_name)
+            ref_path = os.path.join(ref_dir, img_name)
+            search_path = os.path.join(search_dir, img_name)
 
             ref_img = cv2.imread(ref_path, cv2.IMREAD_GRAYSCALE)
             search_img = cv2.imread(search_path, cv2.IMREAD_GRAYSCALE)
@@ -58,59 +60,81 @@ class CoordinateAwareTripletDataset(Dataset):
             if ref_img is None or search_img is None:
                 continue
 
-            cands_500 = generate_candidate_pool_multi(ref_img, search_img, max_pool_size=500)
-            if not cands_500:
-                continue
+            sh, sw = search_img.shape[:2]
+            ref_h, ref_w = ref_img.shape[:2]
 
-            lx, ly = estimate_lattice_period_2d(ref_img)
-            feat_matrix = extract_coordinate_aware_features_pool(ref_img, search_img, cands_500, lx, ly)
+            # Standard 100x100 reference patch
+            ref_100 = cv2.resize(ref_img, (100, 100), interpolation=cv2.INTER_AREA).astype(np.float32)
+            ref_norm = (ref_100 - np.mean(ref_100)) / (np.std(ref_100) + 1e-5)
 
-            dists = np.array([math.hypot(c['cx'] - gt_x, c['cy'] - gt_y) for c in cands_500], dtype=np.float32)
+            # Generate candidate pool
+            cands = generate_candidate_pool_multi(ref_img, search_img, max_pool_size=100)
 
-            pos_idx = int(np.argmin(dists))
-            pos_dist = dists[pos_idx]
+            # Always add Ground Truth positive candidate
+            cands.append({
+                'cx': gt_x,
+                'cy': gt_y,
+                'scale': 0.10
+            })
 
-            if pos_dist > 100.0:
-                continue
+            # Add jittered Ground Truth positives for augmentation
+            for _ in range(2):
+                jx = gt_x + np.random.uniform(-3.0, 3.0)
+                jy = gt_y + np.random.uniform(-3.0, 3.0)
+                js = 0.10 + np.random.uniform(-0.01, 0.01)
+                cands.append({'cx': jx, 'cy': jy, 'scale': js})
 
-            pos_feat = feat_matrix[pos_idx]
+            for cand in cands:
+                cx = float(cand['cx'])
+                cy = float(cand['cy'])
+                s = float(cand.get('scale', 0.10))
 
-            # Select top hard negatives (periodic aliases & top false candidates)
-            neg_indices = []
-            for c_i, c in enumerate(cands_500):
-                if c_i == pos_idx:
-                    continue
-                d = dists[c_i]
-                if d <= 25.0:
-                    continue
+                dist = math.hypot(cx - gt_x, cy - gt_y)
 
-                dx = abs(c['cx'] - gt_x)
-                dy = abs(c['cy'] - gt_y)
-                rem_x = abs((dx % lx) if lx > 0 else dx)
-                rem_y = abs((dy % ly) if ly > 0 else dy)
-                is_alias = (rem_x <= 10.0 or rem_x >= (lx - 10.0)) and (rem_y <= 10.0 or rem_y >= (ly - 10.0))
-                is_top_false = (c_i < 15 and d > 50.0)
+                if dist <= pos_dist_thresh:
+                    label = 1.0
+                elif dist >= neg_dist_thresh:
+                    label = 0.0
+                else:
+                    continue  # Ambiguous margin zone
 
-                if is_alias or is_top_false:
-                    neg_indices.append(c_i)
-                if len(neg_indices) >= 10:
-                    break
+                norm_x = float(np.clip(cx / sw, 0.0, 1.0))
+                norm_y = float(np.clip(cy / sh, 0.0, 1.0))
 
-            if not neg_indices:
-                neg_indices = [c_i for c_i in range(len(cands_500)) if dists[c_i] > 50.0][:10]
+                # Crop candidate patch
+                pad = 60
+                search_pad = cv2.copyMakeBorder(search_img, pad, pad, pad, pad, cv2.BORDER_REFLECT)
+                cw = max(4, int(round(ref_w * s)))
+                ch = max(4, int(round(ref_h * s)))
 
-            for neg_idx in neg_indices:
-                neg_feat = feat_matrix[neg_idx]
-                self.pairs.append((pos_feat, neg_feat))
+                tl_x_pad = int(round(cx + pad - cw / 2.0))
+                tl_y_pad = int(round(cy + pad - ch / 2.0))
 
-            if idx % 40 == 0:
-                print(f"Processed {idx}/{len(self.records)} dataset images...")
+                crop = search_pad[tl_y_pad:tl_y_pad+ch, tl_x_pad:tl_x_pad+cw]
+                if crop.shape[0] != 100 or crop.shape[1] != 100:
+                    crop = cv2.resize(crop, (100, 100), interpolation=cv2.INTER_AREA)
 
-        print(f"[CoordinateAwareTripletDataset] Successfully built {len(self.pairs)} training triplet pairs.")
+                crop_f = crop.astype(np.float32)
+                crop_norm = (crop_f - np.mean(crop_f)) / (np.std(crop_f) + 1e-5)
 
-    def __len__(self):
-        return len(self.pairs)
+                self.samples.append({
+                    'ref': ref_norm,
+                    'cand': crop_norm,
+                    'spatial': [norm_x, norm_y, s],
+                    'label': label
+                })
 
-    def __getitem__(self, idx):
-        pos_f, neg_f = self.pairs[idx]
-        return torch.tensor(pos_f, dtype=torch.float32), torch.tensor(neg_f, dtype=torch.float32)
+        print(f"[Dataset] Total dataset size: {len(self.samples)} pairs.")
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> tuple:
+        sample = self.samples[idx]
+
+        ref_tensor = torch.tensor(sample['ref'], dtype=torch.float32).unsqueeze(0)
+        cand_tensor = torch.tensor(sample['cand'], dtype=torch.float32).unsqueeze(0)
+        spatial_tensor = torch.tensor(sample['spatial'], dtype=torch.float32)
+        label_tensor = torch.tensor([sample['label']], dtype=torch.float32)
+
+        return ref_tensor, cand_tensor, spatial_tensor, label_tensor

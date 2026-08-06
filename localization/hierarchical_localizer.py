@@ -739,6 +739,8 @@ def main():
             output_path=args.vis_path
         )
 
+locate_reference_pattern_hierarchical = locate_reference_pattern
+
 
 if __name__ == "__main__":
     main()

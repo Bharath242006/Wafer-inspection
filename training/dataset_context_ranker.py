@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from scratch.improve_candidate_recall import generate_candidate_pool_multi
+from localization.candidate_generation import generate_candidate_pool_multi
 
 
 class ContextTripletDataset(Dataset):

@@ -113,32 +113,36 @@ def compute_cnn_similarity_scores(ref_img: np.ndarray, search_img: np.ndarray, c
     search_pad = cv2.copyMakeBorder(search_img, pad, pad, pad, pad, cv2.BORDER_REFLECT)
     sh, sw = search_img.shape[:2]
 
-    scores = []
+    crop_tensors = []
+    for cand in candidates:
+        cx = cand.get('center_x', cand.get('cx'))
+        cy = cand.get('center_y', cand.get('cy'))
+        s = cand.get('scale', cand.get('primary_scale', 0.10))
+        cw = max(4, int(round(ref_img.shape[1] * s)))
+        ch = max(4, int(round(ref_img.shape[0] * s)))
+
+        tl_x_pad = int(round(cx + pad - cw / 2.0))
+        tl_y_pad = int(round(cy + pad - ch / 2.0))
+
+        crop = search_pad[tl_y_pad:tl_y_pad+ch, tl_x_pad:tl_x_pad+cw]
+        if crop.shape[0] != 100 or crop.shape[1] != 100:
+            crop = cv2.resize(crop, (100, 100), interpolation=cv2.INTER_AREA)
+
+        crop_f = crop.astype(np.float32)
+        crop_norm = (crop_f - np.mean(crop_f)) / (np.std(crop_f) + 1e-5)
+        crop_tensors.append(torch.tensor(crop_norm, dtype=torch.float32).unsqueeze(0).unsqueeze(0))
+
+    if not crop_tensors:
+        return []
+
+    t_cands = torch.cat(crop_tensors, dim=0)  # Shape: (N, 1, 100, 100)
+
     model.eval()
-
     with torch.no_grad():
-        emb_ref = model.encoder(t_ref)
+        emb_ref = model.encoder(t_ref)           # Shape: (1, 32)
+        emb_cands = model.encoder(t_cands)       # Shape: (N, 32)
+        sims = torch.sum(emb_ref * emb_cands, dim=1).numpy()  # Cosine similarities
 
-        for cand in candidates:
-            cx = cand['center_x']
-            cy = cand['center_y']
-            s = cand.get('primary_scale', 0.10)
-            cw = int(round(ref_img.shape[1] * s))
-            ch = int(round(ref_img.shape[0] * s))
-
-            tl_x_pad = int(round(cx + pad - cw / 2.0))
-            tl_y_pad = int(round(cy + pad - ch / 2.0))
-
-            crop = search_pad[tl_y_pad:tl_y_pad+ch, tl_x_pad:tl_x_pad+cw]
-            if crop.shape[0] != 100 or crop.shape[1] != 100:
-                crop = cv2.resize(crop, (100, 100), interpolation=cv2.INTER_AREA)
-
-            crop_f = crop.astype(np.float32)
-            crop_norm = (crop_f - np.mean(crop_f)) / (np.std(crop_f) + 1e-5)
-            t_cand = torch.tensor(crop_norm, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-
-            emb_cand = model.encoder(t_cand)
-            sim = float(torch.sum(emb_ref * emb_cand).item())
-            scores.append(float(np.clip(sim, -1.0, 1.0)))
-
+    scores = [float(np.clip(s, -1.0, 1.0)) for s in sims]
     return scores
+

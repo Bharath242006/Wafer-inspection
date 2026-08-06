@@ -15,7 +15,8 @@ import cv2
 import math
 import numpy as np
 
-from scratch.improve_candidate_recall import generate_candidate_pool_multi, compute_sobel_gradient
+from localization.candidate_generation import generate_candidate_pool_multi
+from localization.features.edge_features import compute_sobel_gradient
 from localization.global_coarse_localizer import compute_local_variance_map, zmuv_ncc
 from localization.final_localizer import compute_canny_edge
 

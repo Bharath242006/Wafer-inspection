@@ -244,6 +244,8 @@ def main():
             output_path=args.vis_path
         )
 
+locate_reference_pattern_frequency = locate_reference_pattern
+
 
 if __name__ == "__main__":
     main()

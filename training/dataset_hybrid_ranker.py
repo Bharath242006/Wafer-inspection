@@ -22,7 +22,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from scratch.improve_candidate_recall import generate_candidate_pool_multi
+from localization.candidate_generation import generate_candidate_pool_multi
 from localization.final_localizer import estimate_lattice_period_2d
 from localization.hybrid_ranker import extract_hybrid_features_pool
 
@@ -38,17 +38,24 @@ class HybridRankerTripletDataset(Dataset):
 
     def __init__(
         self,
-        csv_file: str,
-        ref_dir: str,
-        search_dir: str,
-        is_train: bool = True,
-        split_idx: int = 160,
+        csv_file: str = None,
+        ref_dir: str = None,
+        search_dir: str = None,
+        data_dir: str = None,
         max_negatives_per_image: int = 10,
     ):
         super().__init__()
+        if data_dir is not None:
+            if csv_file is None:
+                csv_file = os.path.join(data_dir, "labels.csv")
+            if ref_dir is None:
+                ref_dir = os.path.join(data_dir, "reference")
+            if search_dir is None:
+                search_dir = os.path.join(data_dir, "search")
+
         self.pairs = []
         self._build_triplets(
-            csv_file, ref_dir, search_dir, is_train, split_idx, max_negatives_per_image
+            csv_file, ref_dir, search_dir, max_negatives_per_image
         )
 
     def _build_triplets(
@@ -56,21 +63,18 @@ class HybridRankerTripletDataset(Dataset):
         csv_file: str,
         ref_dir: str,
         search_dir: str,
-        is_train: bool,
-        split_idx: int,
         max_neg: int,
     ):
         # Load records
-        all_records = []
-        with open(csv_file, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                all_records.append(row)
+        records = []
+        if csv_file and os.path.exists(csv_file):
+            with open(csv_file, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    records.append(row)
 
-        records = all_records[:split_idx] if is_train else all_records[split_idx:]
         print(
-            f"[HybridRankerTripletDataset] Building triplets for "
-            f"{'train' if is_train else 'val'} split ({len(records)} images)..."
+            f"[HybridRankerTripletDataset] Building triplets for dataset ({len(records)} images)..."
         )
 
         skipped = 0
