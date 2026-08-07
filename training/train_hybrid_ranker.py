@@ -67,7 +67,7 @@ def train_hybrid_ranker():
     print("=" * 95)
     print(f"Feature dimension : {HYBRID_FEATURE_DIM}")
     print(f"Triplet margin    : 0.30")
-    print(f"Epochs            : 20")
+    print(f"Epochs            : 30")
     print(f"Checkpoint        : {checkpoint_path}")
     print("=" * 95)
 
