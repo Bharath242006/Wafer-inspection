@@ -56,9 +56,9 @@ class TripletMarginRankingLoss(nn.Module):
 def train_hybrid_ranker():
     set_seed(42)
 
-    labels_csv = os.path.join("dataset", "validation", "labels.csv")
-    ref_dir = os.path.join("dataset", "validation", "reference")
-    search_dir = os.path.join("dataset", "validation", "search")
+labels_csv = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/labels.csv"  
+ref_dir = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/reference"
+    search_dir = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/search"
     checkpoint_path = os.path.join("checkpoints", "hybrid_ranker.pt")
     os.makedirs("checkpoints", exist_ok=True)
 
@@ -73,9 +73,7 @@ def train_hybrid_ranker():
 
     # ── Load full training dataset ───────────────────────────────────────────
     t0 = time.time()
-    full_dataset = HybridRankerTripletDataset(
-        labels_csv, ref_dir, search_dir, is_train=True, split_idx=160
-    )
+  full_dataset = HybridRankerTripletDataset( labels_csv, ref_dir, search_dir )
     print(f"Dataset built in {time.time() - t0:.1f}s | Pairs: {len(full_dataset)}")
 
     if len(full_dataset) == 0:
@@ -139,11 +137,11 @@ def train_hybrid_ranker():
     model = HybridRankerNet(input_dim=HYBRID_FEATURE_DIM, hidden_dim=128)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=20, eta_min=1e-5
+        optimizer, T_max=30, eta_min=1e-5
     )
 
     best_train_loss = float('inf')
-    epochs = 20
+    epochs = 30
 
     for epoch in range(1, epochs + 1):
         model.train()
