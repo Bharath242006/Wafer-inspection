@@ -58,7 +58,7 @@ def train_hybrid_ranker():
 
 labels_csv = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/labels.csv"  
 ref_dir = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/reference"
-    search_dir = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/search"
+search_dir = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/search"
     checkpoint_path = os.path.join("checkpoints", "hybrid_ranker.pt")
     os.makedirs("checkpoints", exist_ok=True)
 
