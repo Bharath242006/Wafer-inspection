@@ -58,12 +58,12 @@ def train_hybrid_ranker():
     labels_csv = "/kaggle/input/datasets/abineshsekar/semicon-dataset/datasets/train/labels.csv"
     ref_dir = "/kaggle/input/datasets/abineshsekar/semicon-dataset/datasets/train/reference"
     search_dir = "/kaggle/input/datasets/abineshsekar/semicon-dataset/datasets/train/search"
-
     checkpoint_path = os.path.join("checkpoints", "hybrid_ranker.pt")
+
     os.makedirs("checkpoints", exist_ok=True)
 
     print("=" * 95)
-    print("         TRAINING FINAL HYBRID CANDIDATE RANKER  (160 TRAINING IMAGES)")
+    print("         TRAINING FINAL HYBRID CANDIDATE RANKER  (5000 TRAINING IMAGES)")
     print("=" * 95)
     print(f"Feature dimension : {HYBRID_FEATURE_DIM}")
     print(f"Triplet margin    : 0.30")
