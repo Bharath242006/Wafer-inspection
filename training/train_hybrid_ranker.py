@@ -52,13 +52,13 @@ class TripletMarginRankingLoss(nn.Module):
         loss = torch.clamp(score_neg - score_pos + self.margin, min=0.0)
         return torch.mean(loss)
 
-
 def train_hybrid_ranker():
     set_seed(42)
 
-labels_csv = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/labels.csv"  
-ref_dir = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/reference"
-search_dir = "/kaggle/input/datasets/abineshsekar/training-wafer/dataset_small/train/search"
+    labels_csv = "/kaggle/input/datasets/abineshsekar/semicon-dataset/datasets/train/labels.csv"
+    ref_dir = "/kaggle/input/datasets/abineshsekar/semicon-dataset/datasets/train/reference"
+    search_dir = "/kaggle/input/datasets/abineshsekar/semicon-dataset/datasets/train/search"
+
     checkpoint_path = os.path.join("checkpoints", "hybrid_ranker.pt")
     os.makedirs("checkpoints", exist_ok=True)
 
